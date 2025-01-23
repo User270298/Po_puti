@@ -194,9 +194,6 @@ async def trip_seats_available(message: types.Message, state: FSMContext):
     await state.set_state(Trips.price_per_seat)
 
 
-
-
-
 @router.message(StateFilter(Trips.price_per_seat))
 async def trip_price_per_seat(message: types.Message, state: FSMContext):
     if not message.text.isdigit():
@@ -211,28 +208,28 @@ async def trip_price_per_seat(message: types.Message, state: FSMContext):
     )
 
 
-@router.callback_query(F.data.startswith("description_"))
-async def handle_description_choice(callback: types.CallbackQuery, state: FSMContext):
-    choice = callback.data.split("_")[1]
+@router.callback_query(F.data.startswith("yes"))
+async def handle_description_choice(callback: types.CallbackQuery, state: FSMContext, session):
+    await callback.message.answer("📝 *Введите описание поездки.*", parse_mode="Markdown")
+    await state.set_state(Trips.description)
 
-    if choice == "yes":
-        await callback.message.answer("📝 *Введите описание поездки.*", parse_mode="Markdown")
-        await state.set_state(Trips.description)
-    else:
-        await state.update_data(description=None)
-        await trip_description(callback.message, state)
 
+@router.callback_query(F.data.startswith("no"))
+@db_session
+async def handle_description_choice(callback: types.CallbackQuery, state: FSMContext, session):
+    await state.update_data(description=None)
+    await state.set_state(Trips.description)
+    await finalize_trip_creation(callback.message, state, session)
 
 @router.message(StateFilter(Trips.description))
 @db_session
-async def trip_description(message: types.Message, state: FSMContext, session):
+async def save_trip_description(message: types.Message, state: FSMContext, session):
     logger.info(f"User {message.from_user.id} entered description: {message.text}")
     await state.update_data(description=message.text)
-    await trip_description(message, state, session)
+    await finalize_trip_creation(message, state, session)
 
-@router.message(StateFilter(Trips.description))
-@db_session
-async def trip_description(message: types.Message, state: FSMContext, session):
+
+async def finalize_trip_creation(message: types.Message, state: FSMContext, session):
     data = await state.get_data()
     logger.info(f"User {message.from_user.id} completed trip details: {data}")
 
@@ -244,31 +241,27 @@ async def trip_description(message: types.Message, state: FSMContext, session):
         departure_time=data['departure_time'],
         seats_available=data['seats_available'],
         price_per_seat=data['price_per_seat'],
-        description=message.text
+        description=data.get('description')
     )
 
     logger.info(f"Trip created successfully for user {message.from_user.id}")
     await message.answer("Поездка опубликована!", reply_markup=keyboards_main_menu())
-
-    # Получаем количество мест
-    seats_available = trip.seats_available
 
     await message.bot.send_message(
         GROUP_ID,
         f"*Новая поездка!*\n\n"
         f"📍 *Маршрут:* {trip.origin} → {trip.destination}\n"
         f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
-        f"🪑 *Места:* {seats_available}\n"
         f"💰 *Стоимость за место:* {trip.price_per_seat} рублей\n"
-        f"📝*Дополнительно:* {trip.description}",
+        f"{f'📝*Дополнительно:* {trip.description}' if trip.description else ''}",
         parse_mode="Markdown",
-        reply_markup=keyboards_driver(trip.user_id, trip.id, seats_available)  # Передаем количество мест
+        reply_markup=keyboards_driver(trip.user_id, trip.id)  # Без учета мест
     )
     await state.clear()
 
 
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 
 @router.callback_query(F.data.startswith("book_trip:"))
 @db_session
@@ -282,33 +275,7 @@ async def book_trip(callback: types.CallbackQuery, session):
         await callback.answer("Поездка не найдена.")
         return
 
-    # Проверяем, есть ли места
-    if trip.seats_available <= 0:
-        await callback.answer("К сожалению, мест больше нет.")
-        return
-
-    # Формируем сообщение без изменения количества мест
-    seats_available = trip.seats_available
-
-    # Формируем сообщение о поездке
-    trip_message = (
-        f"📍 *Маршрут:* {trip.origin} → {trip.destination}\n"
-        f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
-        f"🪑 *Места:* {seats_available}\n"
-        f"💰 *Стоимость за место:* {trip.price_per_seat} рублей\n"
-        f"📝*Дополнительно:* {trip.description}"
-    )
-
-    # Формируем кнопку с количеством мест
-    button_text = f"Хочу забронировать"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=button_text, callback_data=f"book_trip:{user_id}:{trip_id}")]]
-    )
-
-    # Отправляем сообщение пользователю
-    await callback.message.answer(trip_message, parse_mode="Markdown", reply_markup=keyboard)
-
-    # Отправляем сообщение водителю
+    # Отправляем уведомление водителю
     passenger_name = callback.from_user.full_name or "Имя скрыто"
     passenger_username = callback.from_user.username or "Не указано"
     driver_message = (
@@ -319,13 +286,16 @@ async def book_trip(callback: types.CallbackQuery, session):
         f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
         f"💬 Напишите пассажиру в личные сообщения для уточнения деталей."
     )
-    await callback.bot.send_message(chat_id=trip.user_id, text=driver_message, parse_mode="Markdown")
 
-    # Отвечаем пользователю
-    await callback.answer("Вы успешно отправили запрос на бронирование водителю.")
+    try:
+        await callback.bot.send_message(chat_id=trip.user_id, text=driver_message, parse_mode="Markdown")
+        await callback.answer("Вы успешно отправили запрос на бронирование водителю.")
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения водителю: {e}")
+        await callback.answer("Не удалось отправить запрос водителю. Попробуйте позже.")
 
 
-# Описание поездки
+
 @router.callback_query(F.data.startswith("view_trip_"))
 @db_session
 async def view_trip(callback: types.CallbackQuery, session):
@@ -340,16 +310,12 @@ async def view_trip(callback: types.CallbackQuery, session):
     trip_message = (
         f"📍 *Маршрут:* {trip.origin} → {trip.destination}\n"
         f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
-        f"🪑 *Места:* {trip.seats_available}\n"
         f"💰 *Стоимость за место:* {trip.price_per_seat} рублей\n"
-        f"💬 *Описание:* {trip.description}\n"
+        f"{f'📝*Дополнительно:* {trip.description}' if trip.description else ''}"
     )
 
     # Формируем кнопку "Хочу забронировать"
-    button_text = f"Хочу забронировать"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=button_text, callback_data=f"book_trip:{callback.from_user.id}:{trip.id}")]]
-    )
+    keyboard = keyboards_driver(callback.from_user.id, trip.id)
 
     # Отправляем сообщение с кнопкой
     await callback.message.answer(trip_message, parse_mode="Markdown", reply_markup=keyboard)
@@ -374,4 +340,3 @@ async def search_trips(callback: types.CallbackQuery, session):
 
     # Отправляем сообщение с поездками
     await callback.message.answer("📅 *Выберите поездку:*", parse_mode="Markdown", reply_markup=keyboard)
-

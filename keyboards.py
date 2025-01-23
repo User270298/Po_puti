@@ -8,8 +8,8 @@ def keyboards_main_menu():
     return keyboard
 
 
-def keyboards_driver(user_id, trip_id, seats_available):
-    button_text = f'Хочу поехать (Осталось {seats_available} мест)' if seats_available > 0 else 'Хочу поехать (Нет мест)'
+def keyboards_driver(user_id, trip_id):
+    button_text = "Хочу поехать"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -22,8 +22,8 @@ def keyboards_driver(user_id, trip_id, seats_available):
 def description_choice_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Да", callback_data="description_yes")],
-            [InlineKeyboardButton(text="Нет", callback_data="description_no")]
+            [InlineKeyboardButton(text="Да", callback_data="yes")],
+            [InlineKeyboardButton(text="Нет", callback_data="no")]
         ]
     )
     return keyboard
