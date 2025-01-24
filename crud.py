@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, time
 from models import User, Trip
-
+# import datetime
 
 def register_user(session: Session, telegram_id: int, name: str, email: str, phone: str):
     """
@@ -17,13 +17,10 @@ def register_user(session: Session, telegram_id: int, name: str, email: str, pho
     return user
 
 
-def create_trip(session: Session, user_id: int, origin: str, destination: str, departure_time: datetime,
+def create_trip(session: Session, user_id: int, origin: str, destination: str, departure_time: time,
                 seats_available: int, price_per_seat: int, status: str = 'active', description: str = None):
-    """
-    Создание новой поездки.
-    """
-    if not user_id or not origin or not destination or not departure_time or seats_available <= 0 or price_per_seat <= 0:
-        raise ValueError("Недостаточно данных для создания поездки.")
+    # Ensure `departure_time` is a full datetime object
+    departure_time = datetime.combine(datetime.utcnow().date(), departure_time)
 
     trip = Trip(
         user_id=user_id,
@@ -38,7 +35,21 @@ def create_trip(session: Session, user_id: int, origin: str, destination: str, d
     session.add(trip)
     session.commit()
     session.refresh(trip)
+
+    # Update last_trip_id for the user
+    user = session.query(User).filter(User.id == user_id).first()
+    if user:
+        user.last_trip_id = trip.id
+        session.commit()
+
     return trip
+
+
+def get_last_trip(session: Session, user_id: int):
+    user = session.query(User).filter(User.id == user_id).first()
+    if user and user.last_trip_id:
+        return session.query(Trip).filter(Trip.id == user.last_trip_id).first()
+    return None
 
 
 def get_all_trips(session: Session):

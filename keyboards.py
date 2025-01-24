@@ -4,10 +4,13 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 def keyboards_main_menu():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Опубликовать поездку🚘", callback_data="publish_trip")],
-                         [InlineKeyboardButton(text="Посмотреть все активные поездки📋", callback_data="search_trips")]])
+                         [InlineKeyboardButton(text="Посмотреть все активные поездки📋", callback_data="search_trips")],
+                         [InlineKeyboardButton(text='Просмотреть свою последнюю поездку',
+                                               callback_data="search_trip_last")],
+                         ])
     return keyboard
 
-
+#
 def keyboards_driver(user_id, trip_id):
     button_text = "Хочу поехать"
 
@@ -22,8 +25,8 @@ def keyboards_driver(user_id, trip_id):
 def description_choice_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Да", callback_data="yes")],
-            [InlineKeyboardButton(text="Нет", callback_data="no")]
+            [InlineKeyboardButton(text="Да", callback_data="description_yes")],
+            [InlineKeyboardButton(text="Нет", callback_data="description_no")]
         ]
     )
     return keyboard

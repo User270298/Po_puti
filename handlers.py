@@ -6,12 +6,13 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from dotenv import load_dotenv
-from crud import get_user_trips, register_user, create_trip, User
+from crud import get_user_trips, register_user, create_trip, User, get_last_trip, create_trip
 from keyboards import keyboards_main_menu, keyboards_driver, description_choice_keyboard
 from database import SessionLocal
 from models import Trip
 from aiogram.types import ChatMemberUpdated
 from aiogram.filters import ChatMemberUpdatedFilter
+from datetime import datetime
 
 load_dotenv()
 router = Router()
@@ -164,22 +165,31 @@ async def trip_origin(message: types.Message, state: FSMContext):
 async def trip_destination(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered trip destination: {message.text}")
     await state.update_data(destination=message.text)
-    await message.answer("📅 *Введите дату и время отправления (в формате ДД.ММ.ГГГГ ЧЧ:ММ).*", parse_mode="Markdown")
+    await message.answer("📅 *Время отправления (в формате ЧЧ:ММ, например 15:24).*", parse_mode="Markdown")
     await state.set_state(Trips.departure_time)
 
 
 @router.message(StateFilter(Trips.departure_time))
 async def trip_departure_time(message: types.Message, state: FSMContext):
     try:
-        departure_time = datetime.datetime.strptime(message.text, "%d.%m.%Y %H:%M")
+        # Парсим введенное время
+        departure_time = datetime.strptime(message.text, "%H:%M").time()
+        now = datetime.now().time()  # Получаем текущее время
+
+        # Проверяем, что введенное время больше текущего
+        if departure_time <= now:
+            logger.warning(f"User {message.from_user.id} entered a past or current time: {message.text}")
+            await message.answer("❌ *Введенное время должно быть больше текущего. Попробуйте снова.*",
+                                 parse_mode="Markdown")
+            return
+
         logger.info(f"User {message.from_user.id} entered trip departure time: {message.text}")
         await state.update_data(departure_time=departure_time)
         await message.answer("🪑 *Введите количество доступных мест.*", parse_mode="Markdown")
         await state.set_state(Trips.seats_available)
     except ValueError:
-        logger.warning(f"User {message.from_user.id} entered invalid date format: {message.text}")
-        await message.answer("❌ *Неверный формат даты. Попробуйте снова (в формате ДД.ММ.ГГГГ ЧЧ:ММ).*",
-                             parse_mode="Markdown")
+        logger.warning(f"User {message.from_user.id} entered invalid time format: {message.text}")
+        await message.answer("❌ *Неверный формат времени. Попробуйте снова (в формате ЧЧ:ММ).*", parse_mode="Markdown")
 
 
 @router.message(StateFilter(Trips.seats_available))
@@ -203,36 +213,19 @@ async def trip_price_per_seat(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered price per seat: {message.text}")
     await state.update_data(price_per_seat=int(message.text))
     await message.answer(
-        "*Хотите дополнительно написать описание?*", parse_mode="Markdown",
-        reply_markup=description_choice_keyboard()
+        "*Теперь введите описание поездки.*", parse_mode="Markdown"
     )
-
-
-@router.callback_query(F.data.startswith("yes"))
-async def handle_description_choice(callback: types.CallbackQuery, state: FSMContext, session):
-    await callback.message.answer("📝 *Введите описание поездки.*", parse_mode="Markdown")
     await state.set_state(Trips.description)
 
-
-@router.callback_query(F.data.startswith("no"))
-@db_session
-async def handle_description_choice(callback: types.CallbackQuery, state: FSMContext, session):
-    await state.update_data(description=None)
-    await state.set_state(Trips.description)
-    await finalize_trip_creation(callback.message, state, session)
 
 @router.message(StateFilter(Trips.description))
 @db_session
-async def save_trip_description(message: types.Message, state: FSMContext, session):
-    logger.info(f"User {message.from_user.id} entered description: {message.text}")
-    await state.update_data(description=message.text)
-    await finalize_trip_creation(message, state, session)
-
-
 async def finalize_trip_creation(message: types.Message, state: FSMContext, session):
     data = await state.get_data()
-    logger.info(f"User {message.from_user.id} completed trip details: {data}")
-
+    # logger.info(f"User {message.from_user.id} completed trip details: {data}")
+    logger.info(f"User {message.from_user.id} entered description: {message.text}")
+    description = message.text.strip()
+    # Создаем поездку с учетом всех данных, включая описание, если оно есть
     trip = create_trip(
         session,
         user_id=message.from_user.id,
@@ -241,22 +234,27 @@ async def finalize_trip_creation(message: types.Message, state: FSMContext, sess
         departure_time=data['departure_time'],
         seats_available=data['seats_available'],
         price_per_seat=data['price_per_seat'],
-        description=data.get('description')
+        description=description  # если описание None, будет сохранено как None
     )
 
     logger.info(f"Trip created successfully for user {message.from_user.id}")
     await message.answer("Поездка опубликована!", reply_markup=keyboards_main_menu())
+    print(f"Регистрация {trip.user_id, trip.id}")
 
+    # Отправляем информацию о поездке в группу
     await message.bot.send_message(
         GROUP_ID,
         f"*Новая поездка!*\n\n"
         f"📍 *Маршрут:* {trip.origin} → {trip.destination}\n"
-        f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
+        f"⏰ *Время отправления:* {trip.departure_time.strftime('%H:%M')}\n"
+        f'🪑*Количество мест:* {trip.seats_available}\n"'
         f"💰 *Стоимость за место:* {trip.price_per_seat} рублей\n"
         f"{f'📝*Дополнительно:* {trip.description}' if trip.description else ''}",
         parse_mode="Markdown",
         reply_markup=keyboards_driver(trip.user_id, trip.id)  # Без учета мест
     )
+
+    # Очистить состояние FSM
     await state.clear()
 
 
@@ -274,7 +272,7 @@ async def book_trip(callback: types.CallbackQuery, session):
     if not trip:
         await callback.answer("Поездка не найдена.")
         return
-
+    print(f"Запрос поездки {trip.user_id, trip.id}")
     # Отправляем уведомление водителю
     passenger_name = callback.from_user.full_name or "Имя скрыто"
     passenger_username = callback.from_user.username or "Не указано"
@@ -295,7 +293,6 @@ async def book_trip(callback: types.CallbackQuery, session):
         await callback.answer("Не удалось отправить запрос водителю. Попробуйте позже.")
 
 
-
 @router.callback_query(F.data.startswith("view_trip_"))
 @db_session
 async def view_trip(callback: types.CallbackQuery, session):
@@ -310,6 +307,7 @@ async def view_trip(callback: types.CallbackQuery, session):
     trip_message = (
         f"📍 *Маршрут:* {trip.origin} → {trip.destination}\n"
         f"⏰ *Время отправления:* {trip.departure_time.strftime('%d.%m.%Y %H:%M')}\n"
+        f'🪑 *Количество мест:* {trip.seats_available}\n"'
         f"💰 *Стоимость за место:* {trip.price_per_seat} рублей\n"
         f"{f'📝*Дополнительно:* {trip.description}' if trip.description else ''}"
     )

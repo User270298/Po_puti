@@ -6,6 +6,7 @@ from handlers import router
 from dotenv import load_dotenv
 import os
 from database import init_db
+from sheduler import check_and_update_trips
 
 load_dotenv()
 
@@ -17,7 +18,7 @@ dp = Dispatcher(storage=MemoryStorage())
 
 async def main():
     dp.include_router(router)
-
+    asyncio.create_task(check_and_update_trips())
     init_db()
     try:
         await dp.start_polling(bot)

@@ -17,7 +17,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Связь с поездками
-    trips = relationship("Trip", back_populates="user")
+    trips = relationship("Trip", back_populates="user", foreign_keys="Trip.user_id")
 
 # Таблица поездок
 class Trip(Base):
@@ -30,9 +30,9 @@ class Trip(Base):
     departure_time = Column(DateTime, nullable=False)
     seats_available = Column(Integer, nullable=False)
     price_per_seat = Column(Integer, nullable=False)
-    status = Column(String, nullable=False)
-    description = Column(String)
+    status = Column(String, nullable=False, default="active")
+    description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Связь с пользователем
-    user = relationship("User", back_populates="trips")
+    user = relationship("User", back_populates="trips", foreign_keys=[user_id])
