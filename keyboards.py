@@ -5,8 +5,7 @@ def keyboards_main_menu():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Опубликовать поездку🚘", callback_data="publish_trip")],
                          [InlineKeyboardButton(text="Посмотреть все активные поездки📋", callback_data="search_trips")],
-                         [InlineKeyboardButton(text='Просмотреть свою последнюю поездку',
-                                               callback_data="search_trip_last")],
+
                          ])
     return keyboard
 

@@ -6,13 +6,15 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from dotenv import load_dotenv
-from crud import get_user_trips, register_user, create_trip, User, get_last_trip, create_trip
+from crud import get_user_trips, register_user, create_trip, User, get_last_trip, create_trip, get_users_who_booked_trip, book_trip_in_db
 from keyboards import keyboards_main_menu, keyboards_driver, description_choice_keyboard
 from database import SessionLocal
 from models import Trip
 from aiogram.types import ChatMemberUpdated
 from aiogram.filters import ChatMemberUpdatedFilter
 from datetime import datetime
+
+
 
 load_dotenv()
 router = Router()
@@ -236,8 +238,10 @@ async def finalize_trip_creation(message: types.Message, state: FSMContext, sess
         price_per_seat=data['price_per_seat'],
         description=description  # если описание None, будет сохранено как None
     )
-
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     logger.info(f"Trip created successfully for user {message.from_user.id}")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='❌ Отменить поездку', callback_data=f"cancel_trip:{trip.id}")]])
+    await message.answer("Если хотите отменить поездку нажмите на кнопку", reply_markup=keyboard)
     await message.answer("Поездка опубликована!", reply_markup=keyboards_main_menu())
     print(f"Регистрация {trip.user_id, trip.id}")
 
@@ -273,6 +277,7 @@ async def book_trip(callback: types.CallbackQuery, session):
         await callback.answer("Поездка не найдена.")
         return
     print(f"Запрос поездки {trip.user_id, trip.id}")
+    book_trip_in_db(session, user_id, trip_id)
     # Отправляем уведомление водителю
     passenger_name = callback.from_user.full_name or "Имя скрыто"
     passenger_username = callback.from_user.username or "Не указано"
@@ -338,3 +343,40 @@ async def search_trips(callback: types.CallbackQuery, session):
 
     # Отправляем сообщение с поездками
     await callback.message.answer("📅 *Выберите поездку:*", parse_mode="Markdown", reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("cancel_trip:"))
+@db_session
+async def cancel_trip(callback: types.CallbackQuery, session):
+    trip_id = int(callback.data.split(":")[1])
+    trip = session.query(Trip).filter_by(id=trip_id).first()
+
+    if not trip:
+        await callback.answer("Поездка не найдена.")
+        return
+
+    # Обновляем статус поездки на 'cancelled'
+    trip.status = "cancelled"
+    session.commit()
+
+    # Удаляем сообщение о поездке из группы
+    try:
+        await callback.bot.delete_message(chat_id=GROUP_ID, message_id=trip.group_message_id)
+    except Exception as e:
+        logger.error(f"Ошибка при удалении сообщения: {e}")
+
+    # Отправляем уведомления всем пользователям, которые забронировали места
+    booked_users = get_users_who_booked_trip(session, trip_id)  # Функция для получения пользователей, которые забронировали поездку
+
+    for user in booked_users:
+        try:
+            await callback.bot.send_message(
+                user.telegram_id,
+                f"🚨 *Внимание!* Поездка {trip.origin} → {trip.destination} отменена.\n"
+                f"Причина: {callback.from_user.full_name} отменил(а) поездку.\n"
+                f"💡 Пожалуйста, выберите другую поездку или создайте свою!"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления пользователю {user.telegram_id}: {e}")
+
+    await callback.answer("Поездка отменена. Все участники были уведомлены.")

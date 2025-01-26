@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, time
-from models import User, Trip
+from models import User, Trip, TripBooking
 # import datetime
 
 def register_user(session: Session, telegram_id: int, name: str, email: str, phone: str):
@@ -71,3 +71,24 @@ def get_all_users(session: Session):
     Получение всех пользователей.
     """
     return session.query(User).all()
+
+
+def get_users_who_booked_trip(session: Session, trip_id: int):
+    """
+    Получение пользователей, которые забронировали места на поездку.
+    """
+    return session.query(User).join(TripBooking).filter(TripBooking.trip_id == trip_id).all()
+
+def book_trip_in_db(session: Session, user_id: int, trip_id: int):
+    """
+    Создание записи о бронировании поездки пользователем.
+    """
+    existing_booking = session.query(TripBooking).filter_by(user_id=user_id, trip_id=trip_id).first()
+    if existing_booking:
+        raise ValueError("Пользователь уже забронировал эту поездку.")
+
+    booking = TripBooking(user_id=user_id, trip_id=trip_id)
+    session.add(booking)
+    session.commit()
+    session.refresh(booking)
+    return booking
