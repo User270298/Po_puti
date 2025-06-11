@@ -12,7 +12,9 @@ from database import SessionLocal
 from models import Trip
 from aiogram.types import ChatMemberUpdated
 from aiogram.filters import ChatMemberUpdatedFilter
-from datetime import datetime
+from datetime import datetime, timedelta
+import asyncio
+import pytz
 
 
 
@@ -45,7 +47,7 @@ class Registration(StatesGroup):
     name = State()
     email = State()
     phone = State()
-
+    
 
 class Trips(StatesGroup):
     origin = State()
@@ -56,18 +58,18 @@ class Trips(StatesGroup):
     description = State()
 
 
-@router.chat_member(ChatMemberUpdatedFilter)
-async def handle_system_messages(update: ChatMemberUpdated, bot: Bot):
-    """
-    Удаляет системные сообщения о вступлении или выходе участников.
-    """
-    try:
-        # Проверяем, если пользователь вступил или покинул группу
-        if update.new_chat_member.status in ["member"] or update.old_chat_member.status in ["left"]:
-            print(f"Удаляем системное сообщение в группе {update.chat.title}")
-            await bot.delete_message(chat_id=update.chat.id, message_id=update.message_id)
-    except Exception as e:
-        print(f"Ошибка удаления сообщения: {e}")
+# @router.chat_member(ChatMemberUpdatedFilter)
+# async def handle_system_messages(update: ChatMemberUpdated, bot: Bot):
+#     """
+#     Удаляет системные сообщения о вступлении или выходе участников.
+#     """
+#     try:
+#         # Проверяем, если пользователь вступил или покинул группу
+#         if update.new_chat_member.status in ["member"] or update.old_chat_member.status in ["left"]:
+#             print(f"Удаляем системное сообщение в группе {update.chat.title}")
+#             await bot.delete_message(chat_id=update.chat.id, message_id=update.message_id)
+#     except Exception as e:
+#         print(f"Ошибка удаления сообщения: {e}")
 
 
 # @router.message(Command(commands=["start"]))
@@ -76,26 +78,30 @@ async def handle_system_messages(update: ChatMemberUpdated, bot: Bot):
 #     # Кнопка с ссылкой на бота
 #     keyboard = InlineKeyboardMarkup(
 #         inline_keyboard=[
-#             [InlineKeyboardButton(text="🚀 Открыть бота", url="https://t.me/on_the_way_rnd_bot")]
+#             [InlineKeyboardButton(text="🚀 Открыть группу", url="https://t.me/num_po_puti")]
 #         ]
 #     )
 #     # Текст сообщения
 #     await message.answer(
 #         text=(
-#             "👋 Добро пожаловать в группу *По пути!* 🚗\n\n"
-#             "Для публикации поездок используйте нашего бота.\nОн поможет вам найти попутчиков и организовать совместные поездки! 🛤️\n\n"
-#             "📌 *Что вы можете сделать?*\n"
-#             "🚘 Публиковать маршруты для поиска попутчиков\n"
-#             "👫 Находить попутчиков для совместных поездок\n"
-#             "💰 Экономить на путешествиях, деля расходы\n\n"
-#             "🎯 Сделайте свои поездки удобнее и дешевле!"
+# '''🚗 Хочешь больше попутчиков? Переходи в новую группу!
+# 👋 Ты уже пользуешься нашей группой «Нам по пути» для поездок c Суворовского района и обратно? Отлично!
+
+# 🔹 Встречайте новую группу — «Нам по пути | Все районы»!
+# ✅ Больше маршрутов — не только Суворовский, но и любые направления
+# ✅ Еще больше водителей и пассажиров — больше шансов найти попутчика
+# ✅ Гибкость — поездки между любыми районами без ограничений
+# ✅ Телеграм бот - для удобства поиска и публикации маршрутов
+# 👉 Переходи и подписывайся: @num_po_puti
+
+# Не ограничивай себя одним районом — путешествуй по всему городу дешево и удобно!'''
 #         ),
 #         parse_mode="Markdown",
 #         reply_markup=keyboard
 #     )
 
 
-# Регистрация нового пользователя
+# # Регистрация нового пользователя
 @router.message(Command(commands=["start"]))
 @db_session
 async def start_command(message: types.Message, state: FSMContext, session):
@@ -104,17 +110,24 @@ async def start_command(message: types.Message, state: FSMContext, session):
 
     if user:
         logger.info(f"User {message.from_user.id} found in database")
-        await message.answer("*Добро пожаловать обратно!*\n\n🚀 Вот ваше главное меню:",
+        await message.answer("*Добро пожаловать обратно!*\n\n🚀 Главное меню:",
                              parse_mode="Markdown", reply_markup=keyboards_main_menu())
     else:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         logger.info(f"User {message.from_user.id} not found in database, starting registration")
+        keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Открыть бота", url="https://t.me/num_po_puti_bot")]
+        ]
+    )
         await message.answer(
-            "*Добро пожаловать в Едем вместе Бот!*\n\n"
+            "*Добро пожаловать в Нам по пути Бот!*\n\n"
             "🤖🚘 Этот бот поможет вам найти попутчиков или предложить свои поездки.\n\n"
             "Для публикации поездок необходимо зарегистрироваться. 🚀",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=keyboard
         )
-        await message.answer("📋 *Пожалуйста, отправьте ваше имя для регистрации.*",
+        await message.answer("📋 *Пожалуйста, отправьте ваше имя для регистрации:*",
                              parse_mode="Markdown")
         await state.set_state(Registration.name)
 
@@ -123,7 +136,7 @@ async def start_command(message: types.Message, state: FSMContext, session):
 async def process_name(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered name: {message.text}")
     await state.update_data(name=message.text)
-    await message.answer("📧 *Введите ваш email.*", parse_mode="Markdown")
+    await message.answer("📧 *Введите ваш email:*", parse_mode="Markdown")
     await state.set_state(Registration.email)
 
 
@@ -131,7 +144,7 @@ async def process_name(message: types.Message, state: FSMContext):
 async def process_email(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered email: {message.text}")
     await state.update_data(email=message.text)
-    await message.answer("📱 *Введите ваш номер телефона.*", parse_mode="Markdown")
+    await message.answer("📱 *Введите ваш номер телефона:*", parse_mode="Markdown")
     await state.set_state(Registration.phone)
 
 
@@ -151,7 +164,7 @@ async def process_phone(message: types.Message, state: FSMContext, session):
 @router.callback_query(F.data == "publish_trip")
 async def create_trip_command(callback: types.CallbackQuery, state: FSMContext):
     logger.info(f"User {callback.message.from_user.id} initiated trip creation")
-    await callback.message.answer("📍 *Введите место, откуда будете выезжать.*", parse_mode="Markdown")
+    await callback.message.answer("📍 *Введите место, откуда будете выезжать:*", parse_mode="Markdown")
     await state.set_state(Trips.origin)
 
 
@@ -159,7 +172,7 @@ async def create_trip_command(callback: types.CallbackQuery, state: FSMContext):
 async def trip_origin(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered trip origin: {message.text}")
     await state.update_data(origin=message.text)
-    await message.answer("🏁 *Введите конечную точку поездки.*", parse_mode="Markdown")
+    await message.answer("🏁 *Введите конечную точку поездки:*", parse_mode="Markdown")
     await state.set_state(Trips.destination)
 
 
@@ -167,7 +180,7 @@ async def trip_origin(message: types.Message, state: FSMContext):
 async def trip_destination(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered trip destination: {message.text}")
     await state.update_data(destination=message.text)
-    await message.answer("📅 *Время отправления (в формате ЧЧ:ММ, например 15:24).*", parse_mode="Markdown")
+    await message.answer("📅 *Время отправления (в формате ЧЧ:ММ, например 15:24):*", parse_mode="Markdown")
     await state.set_state(Trips.departure_time)
 
 
@@ -181,13 +194,13 @@ async def trip_departure_time(message: types.Message, state: FSMContext):
         # Проверяем, что введенное время больше текущего
         if departure_time <= now:
             logger.warning(f"User {message.from_user.id} entered a past or current time: {message.text}")
-            await message.answer("❌ *Введенное время должно быть больше текущего. Попробуйте снова.*",
+            await message.answer("❌ *Введенное время должно быть больше текущего. Попробуйте снова:*",
                                  parse_mode="Markdown")
             return
 
         logger.info(f"User {message.from_user.id} entered trip departure time: {message.text}")
         await state.update_data(departure_time=departure_time)
-        await message.answer("🪑 *Введите количество доступных мест.*", parse_mode="Markdown")
+        await message.answer("🪑 *Введите количество доступных мест:*", parse_mode="Markdown")
         await state.set_state(Trips.seats_available)
     except ValueError:
         logger.warning(f"User {message.from_user.id} entered invalid time format: {message.text}")
@@ -202,7 +215,7 @@ async def trip_seats_available(message: types.Message, state: FSMContext):
 
     logger.info(f"User {message.from_user.id} entered seats available: {message.text}")
     await state.update_data(seats_available=int(message.text))
-    await message.answer("💰 *Введите стоимость за место.*", parse_mode="Markdown")
+    await message.answer("💰 *Введите стоимость за место:*", parse_mode="Markdown")
     await state.set_state(Trips.price_per_seat)
 
 
@@ -215,7 +228,7 @@ async def trip_price_per_seat(message: types.Message, state: FSMContext):
     logger.info(f"User {message.from_user.id} entered price per seat: {message.text}")
     await state.update_data(price_per_seat=int(message.text))
     await message.answer(
-        "*Теперь введите описание поездки.*", parse_mode="Markdown"
+        "*Теперь введите описание поездки(необязательный пункт):*", parse_mode="Markdown"
     )
     await state.set_state(Trips.description)
 
@@ -380,3 +393,57 @@ async def cancel_trip(callback: types.CallbackQuery, session):
             logger.error(f"Ошибка отправки уведомления пользователю {user.telegram_id}: {e}")
 
     await callback.answer("Поездка отменена. Все участники были уведомлены.")
+
+
+async def send_weekly_promo(bot: Bot):
+    """
+    Отправляет промо-сообщение в группу каждую неделю в понедельник в 10:00
+    """
+    while True:
+        now = datetime.now(pytz.timezone('Europe/Moscow'))
+        # Ждем до следующего понедельника 10:00
+        days_until_monday = (7 - now.weekday()) % 7
+        if days_until_monday == 0 and now.hour >= 10:
+            days_until_monday = 7
+        
+        next_monday = now.replace(hour=10, minute=0, second=0, microsecond=0) + timedelta(days=days_until_monday)
+        wait_seconds = (next_monday - now).total_seconds()
+        
+        await asyncio.sleep(wait_seconds)
+        
+        # Отправляем промо-сообщение
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🚀 Открыть группу", url="https://t.me/num_po_puti")]
+            ]
+        )
+        
+        promo_message = (
+            "🚗 Хочешь больше попутчиков? Переходи в новую группу!\n"
+            "👋 Ты уже пользуешься нашей группой «Нам по пути» для поездок c Суворовского района и обратно? Отлично!\n\n"
+            "🔹 Встречайте новую группу — «Нам по пути | Все районы»!\n"
+            "✅ Больше маршрутов — не только Суворовский, но и любые направления\n"
+            "✅ Еще больше водителей и пассажиров — больше шансов найти попутчика\n"
+            "✅ Гибкость — поездки между любыми районами без ограничений\n"
+            "✅ Телеграм бот - для удобства поиска и публикации маршрутов\n"
+            "👉 Переходи и подписывайся: @num_po_puti\n\n"
+            "Не ограничивай себя одним районом — путешествуй по всему городу дешево и удобно!"
+        )
+        
+        try:
+            await bot.send_message(
+                chat_id="@suvorovskynam",
+                text=promo_message,
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            logger.info("Weekly promo message sent successfully")
+        except Exception as e:
+            logger.error(f"Error sending weekly promo message: {e}")
+
+# Добавляем функцию для запуска планировщика
+async def start_scheduler(bot: Bot):
+    """
+    Запускает планировщик отправки промо-сообщений
+    """
+    asyncio.create_task(send_weekly_promo(bot))

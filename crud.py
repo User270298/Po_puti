@@ -3,6 +3,8 @@ from datetime import datetime, time
 from models import User, Trip, TripBooking
 # import datetime
 
+
+
 def register_user(session: Session, telegram_id: int, name: str, email: str, phone: str):
     """
     Регистрация нового пользователя.

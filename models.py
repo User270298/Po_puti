@@ -1,9 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean, Time
+from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
+
 
 # Таблица пользователей
 class User(Base):
@@ -12,13 +12,15 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     telegram_id = Column(Integer, unique=True, nullable=False)
     name = Column(String, nullable=False)
-    email = Column(String, unique=True)
+    email = Column(String, unique=False)
     phone = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Связь с поездками
     trips = relationship("Trip", back_populates="user", foreign_keys="Trip.user_id")
     booked_trips = relationship("TripBooking", back_populates="user")
+
+
 # Таблица поездок
 class Trip(Base):
     __tablename__ = "trip"
@@ -31,12 +33,14 @@ class Trip(Base):
     seats_available = Column(Integer, nullable=False)
     price_per_seat = Column(Integer, nullable=False)
     status = Column(String, nullable=False, default="active")
-    description = Column(String, nullable=True)
+    description = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Связь с пользователем
     user = relationship("User", back_populates="trips", foreign_keys=[user_id])
     booked_users = relationship("TripBooking", back_populates="trip")
+
+
 class TripBooking(Base):
     __tablename__ = "trip_booking"
 
