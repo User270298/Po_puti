@@ -19,10 +19,9 @@ def register_user(session: Session, telegram_id: int, name: str, email: str, pho
     return user
 
 
-def create_trip(session: Session, user_id: int, origin: str, destination: str, departure_time: time,
-                seats_available: int, price_per_seat: int, status: str = 'active', description: str = None):
-    # Ensure `departure_time` is a full datetime object
-    departure_time = datetime.combine(datetime.utcnow().date(), departure_time)
+def create_trip(session: Session, user_id: int, origin: str, destination: str, departure_time: datetime,
+                seats_available: int = None, price_per_seat: int = None, status: str = 'active', description: str = None):
+    # departure_time теперь уже является datetime объектом
 
     trip = Trip(
         user_id=user_id,

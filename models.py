@@ -30,8 +30,8 @@ class Trip(Base):
     origin = Column(String, nullable=False)
     destination = Column(String, nullable=False)
     departure_time = Column(DateTime, nullable=False)
-    seats_available = Column(Integer, nullable=False)
-    price_per_seat = Column(Integer, nullable=False)
+    seats_available = Column(Integer, nullable=True)  # Делаем необязательным
+    price_per_seat = Column(Integer, nullable=True)   # Делаем необязательным
     status = Column(String, nullable=False, default="active")
     description = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
